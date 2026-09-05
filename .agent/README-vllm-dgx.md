@@ -66,16 +66,18 @@ shows the model because the openclaw id is used for display, but the
 backend call fails.
 
 Two ways to fix:
-  - **Pass `--served-model-name <id>` to vLLM** so the served id
-    matches the openclaw provider id.
-  - **Set the openclaw provider `id` to the HF id**
-    (`Qwen/Qwen3-1.7B`) — works without changing vLLM flags.
+
+- **Pass** **`--served-model-name <id>`** **to vLLM** so the served id
+  matches the openclaw provider id.
+
+- **Set the openclaw provider** **`id`** **to the HF id**
+  (`Qwen/Qwen3-1.7B`) — works without changing vLLM flags.
 
 Verify with `curl http://127.0.0.1:8000/v1/models` before wiring up
 the provider. The exact id there MUST be the one in the openclaw
 provider.
 
-**(b) Gateway hot-reload watches openclaw.json but not the per-agent
+**(b) Gateway hot-reload watches openclaw\.json but not the per-agent
 models.json.** Restarting openclaw after editing the per-agent files
 **does** pick them up (the agent DB re-reads them on agent start), but
 a hot file-touch does not. The simplest reliable way: edit
@@ -88,16 +90,18 @@ Before running `scripts/06_register_openclaw.sh`:
 
 1. `curl http://127.0.0.1:<port>/v1/models` → note the exact `id`
    field. This is the canonical id.
-2. Decide: keep the HF id in openclaw, OR pass `--served-model-name
-   <openclaw_id>` to vLLM. **Document the choice.**
+2. Decide: keep the HF id in openclaw, OR pass `--served-model-name <openclaw_id>` to vLLM. **Document the choice.**
 3. Update `scripts/env.sh` with the served name if you went with
    `--served-model-name`.
 4. Run `scripts/06_register_openclaw.sh` — verifies `openclaw.json`
    hot-reload worked.
 5. Verify the **three places** are all updated:
-     - `openclaw.json` → `models.providers` (provider)
-     - `openclaw.json` → `modelPolicy.allow` (picker allowlist)
-     - 6 per-agent `~/.openclaw/agents/*/models.json` (picker catalog)
+
+   - `openclaw.json` → `models.providers` (provider)
+
+   - `openclaw.json` → `modelPolicy.allow` (picker allowlist)
+
+   - 6 per-agent `~/.openclaw/agents/*/models.json` (picker catalog)
 6. **Hard refresh the webchat (Ctrl+Shift+R).** WebSocket caches the
    model list; F5 alone may not be enough.
 

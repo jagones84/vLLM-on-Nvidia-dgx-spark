@@ -20,7 +20,26 @@ fi
 # If a vllm-server container is still around, remove it.
 docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
 
+# Build the vllm-serve args as a bash array (safer than line-continuation +
+# $() substitution, which bash parses as a new command and tries to run).
+VLLM_ARGS=(
+  --max-model-len "${MAX_MODEL_LEN}"
+  --gpu-memory-utilization "${GPU_MEM_UTIL}"
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}"
+  --enable-auto-tool-choice
+  --tool-call-parser hermes
+  --reasoning-parser qwen3
+  --host 0.0.0.0
+  --port 8000
+)
+if [ -n "${ROPE_SCALING:-}" ]; then
+  VLLM_ARGS+=(--hf-overrides "{\"rope_scaling\": ${ROPE_SCALING}}")
+  echo "[INFO] | $(date -Iseconds) | start_vllm_bg | YaRN rope scaling enabled via --hf-overrides"
+fi
+
 echo "[INFO] | $(date -Iseconds) | start_vllm_bg | launching ${MODEL_HANDLE}"
+echo "[INFO] | $(date -Iseconds) | start_vllm_bg | max_model_len=${MAX_MODEL_LEN} gpu_mem_util=${GPU_MEM_UTIL} max_batch=${MAX_NUM_BATCHED_TOKENS}"
+
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --gpus all \
@@ -33,15 +52,7 @@ docker run -d \
   -e VLLM_ENGINE_READY_TIMEOUT_S=1200 \
   -v "${HF_CACHE_HOST}:/root/.cache/huggingface" \
   "${VLLM_IMAGE}" \
-  vllm serve "${MODEL_HANDLE}" \
-    --max-model-len "${MAX_MODEL_LEN}" \
-    --gpu-memory-utilization "${GPU_MEM_UTIL}" \
-    --max-num-batched-tokens 8192 \
-    --enable-auto-tool-choice \
-    --tool-call-parser hermes \
-    --reasoning-parser qwen3 \
-    --host 0.0.0.0 \
-    --port 8000
+  vllm serve "${MODEL_HANDLE}" "${VLLM_ARGS[@]}"
 
 echo "[INFO] | $(date -Iseconds) | start_vllm_bg | container started, id:"
 docker ps --filter "name=${CONTAINER_NAME}" --format "{{.ID}} {{.Status}}"

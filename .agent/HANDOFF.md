@@ -1,25 +1,53 @@
 # HANDOFF — vLLM on DGX Spark
 
-Last updated: 2026-09-05
+Last updated: 2026-09-05 10:18
 
 ## Current state
 
-**Status: WORKING.** vLLM 0.28.0 (`vllm/vllm-openai:latest`) serves
-`Qwen/Qwen3-1.7B` on `localhost:8000` on the DGX Spark. The reasoning
-parser splits `message.reasoning` (think) from `message.content`
-(answer). Confirmed end-to-end with two test prompts on 2026-09-05.
+**Status: WORKING with 254K context via YaRN.** vLLM 0.28.0
+(`vllm/vllm-openai:latest`) serves `Qwen/Qwen3-1.7B` on `localhost:8000`
+on the DGX Spark, extended to 254K context (40K native -> 254K via YaRN
+factor 6.4, passed via `--hf-overrides`). The reasoning parser splits
+`message.reasoning` (think) from `message.content` (answer). Confirmed
+end-to-end with 3 test prompts (simple, Italian, 40K long-context) on
+2026-09-05. **GPU memory: 32.6 GiB (vs 97 GiB before, 3x more context
+in 1/3 the memory).**
 
 ## Server
 
 - **Image:** `vllm/vllm-openai:latest` (v0.28.0, 20.6 GB on disk)
 - **Model:** `Qwen/Qwen3-1.7B` (3.78 GiB checkpoint, BF16)
+- **Context:** 254000 tokens (YaRN factor 6.4 over native 40K)
 - **Port:** 8000 (host) -> 8000 (container)
 - **Container name:** `vllm-server`
-- **GPU memory utilization:** 0.8 (NVIDIA recipe-recommended)
-- **Max model len:** 8192 tokens
-- **First-start time:** ~130s end-to-end (safetensors load 20s + torch.compile
-  cudagraph capture 51s + FlashInfer autotune 18s + warmup + handshake).
-  Subsequent starts are much faster due to on-disk compile cache.
+- **GPU memory utilization:** 0.28 (lean profile for 254K)
+- **Max num batched tokens:** 32768
+- **First-start time:** ~140s end-to-end (autotune + YaRN warmup
+  slightly longer than baseline 130s). Subsequent starts are faster
+  due to on-disk compile cache.
+
+## YaRN context extension
+
+Qwen3-1.7B's native `max_position_embeddings` is 40960 (40K). We
+extend to 254K via YaRN rope scaling. vLLM 0.28.0 does **NOT** accept
+`--rope-scaling` as a CLI flag — it must be passed via `--hf-overrides`:
+
+```bash
+--hf-overrides '{"rope_scaling": {"rope_type":"yarn","factor":6.4,"original_max_position_embeddings":40960}}'
+```
+
+The variable `ROPE_SCALING` in `scripts/env.sh` holds the inner JSON
+(`{"rope_type":"yarn","factor":6.4,"original_max_position_embeddings":40960}`)
+and `scripts/02b_start_vllm_detached.sh` wraps it in `--hf-overrides`.
+
+To switch profiles, change `MAX_MODEL_LEN` and `ROPE_SCALING` together:
+
+| Target context | factor | MAX_MODEL_LEN | GPU_MEM_UTIL | total GPU |
+|---|---|---|---|---|
+| 65K   | 1.6 | 65000   | 0.12 | ~14 GB |
+| 131K  | 3.2 | 131000  | 0.18 | ~21 GB |
+| **254K** | **6.4** | **254000** | **0.28** | **~33 GB** |
+| 320K  | 8.0 | 320000  | 0.35 | ~42 GB |
 
 ## Reasoning-parser output (vLLM 0.28.0 schema)
 
@@ -52,12 +80,13 @@ See `scripts/02b_start_vllm_detached.sh`. The vLLM flags we use:
 
 ```
 vllm serve Qwen/Qwen3-1.7B \
-  --max-model-len 8192 \
-  --gpu-memory-utilization 0.8 \
-  --max-num-batched-tokens 8192 \
+  --max-model-len 254000 \
+  --gpu-memory-utilization 0.28 \
+  --max-num-batched-tokens 32768 \
   --enable-auto-tool-choice \
   --tool-call-parser hermes \
   --reasoning-parser qwen3 \
+  --hf-overrides '{"rope_scaling": {"rope_type":"yarn","factor":6.4,"original_max_position_embeddings":40960}}' \
   --host 0.0.0.0 \
   --port 8000
 ```
@@ -107,6 +136,19 @@ bash /home/jagones/Programs/vLLM/scripts/05_test_thinking.sh
    spurious event, not after a timeout). Still set it to 1200s as
    headroom.
 
+6. **YaRN context extension is via `--hf-overrides`, NOT `--rope-scaling`.**
+   vLLM 0.28.0 rejects `--rope-scaling {...}` with "unrecognized
+   arguments". The correct flag is `--hf-overrides
+   '{"rope_scaling":{...}}'` (nested JSON). Documented in
+   `scripts/02b_start_vllm_detached.sh`.
+
+7. **254K context is 32.6 GiB, not 97 GiB.** The original 0.8 gpu-mem-util
+   with 8K max-model-len was wildly over-allocated (vLLM pre-allocates
+   a pool sized for max_num_seqs x max_model_len). For long-context
+   lean profiles, set gpu-mem-util proportional to the actual
+   KV-cache requirement: 112 KB/token x max_model_len, plus 3.4 GB
+   model. See the table in the "YaRN context extension" section above.
+
 ## Next steps / TODO
 
 - Try `Qwen/Qwen3-4B` (4B) and `Qwen/Qwen3-8B` (8B) for higher quality.
@@ -127,3 +169,29 @@ bash /home/jagones/Programs/vLLM/scripts/05_test_thinking.sh
 - [scripts/04_logs.sh](scripts/04_logs.sh) — `docker logs -f` wrapper
 - [.agent/README-vllm-dgx.md](.agent/README-vllm-dgx.md) — deep domain manual
 - [outputs/](outputs/) — test artifacts, dated subfolders
+
+## OpenClaw registration fix (2026-09-05)
+
+`06_register_openclaw.sh` (v1) added the provider but the model was NOT
+selectable in OpenClaw. Two root causes, both proven:
+
+1. **Missing allowlist entry** - in this OpenClaw build the model picker only
+   shows models listed in `agents.defaults.modelPolicy.allow`. The v1 script
+   never touched it.
+2. **Model id mismatch** - provider id was `qwen3-1.7b` but vLLM serves the
+   HF handle `Qwen/Qwen3-1.7B` (no `--served-model-name` in the docker run).
+   Proof: `POST /v1/chat/completions {model: "qwen3-1.7b"}` -> HTTP 404
+   "model does not exist"; with `Qwen/Qwen3-1.7B` -> HTTP 200 + split
+   `reasoning`/`content`.
+
+Fixes applied to the live config (backup `openclaw.json.bak-vllmfix-20260905`):
+provider id corrected, 5 stale per-agent keys renamed, ref added to the
+allowlist. Hot reload confirmed 09:59:56. `/model` ref:
+
+    /model local-vllm/Qwen/Qwen3-1.7B
+
+`scripts/add_vllm_provider.py` updated to v2 (correct id + allowlist step) so
+a re-run produces a working registration. Open point: confirm OpenClaw's
+`openai-completions` client reads the v0.28 `reasoning` field (renamed from
+`reasoning_content`); if the think block is dropped in chat, align the parser
+or the client param mapping.

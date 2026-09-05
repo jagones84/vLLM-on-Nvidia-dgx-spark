@@ -21,12 +21,12 @@ VLLM_PROVIDER = {
     "timeoutSeconds": 1800,
     "models": [
         {
-            "id": "qwen3-1.7b",
+            "id": "Qwen/Qwen3-1.7B",
             "name": "Qwen3 1.7B Thinking (vLLM, DGX Spark)",
             "reasoning": True,
             "input": ["text"],
             "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-            "contextWindow": 8192,
+            "contextWindow": 254000,
             "maxTokens": 8192,
             "api": "openai-completions",
         }

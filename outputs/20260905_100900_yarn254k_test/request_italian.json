@@ -1,0 +1,1 @@
+{"model":"Qwen/Qwen3-1.7B","messages":[{"role":"user","content":"Rispondi solo in italiano. Conta da 1 a 5 separando i numeri con una virgola."}],"max_tokens":2000,"temperature":0.2}
