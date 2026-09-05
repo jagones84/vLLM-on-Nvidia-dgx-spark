@@ -8,12 +8,19 @@ and the model recipe: <https://recipes.vllm.ai/Qwen/Qwen3-1.7B>
 ## Layout
 
 ```
-vLLM/
-├── .agent/              # documentation (HANDOFF, domain manuals)
-├── scripts/             # operational scripts (numbered 00-05)
-├── outputs/             # timestamped test artifacts (YYYYMMDD_HHMM_*)
-├── trash/               # scratch / one-off experiments (excluded from mass fixes)
-└── logs/                # long-running log captures
+vLLM/                        (this repo, the scripts + docs only)
+├── .agent/                  # documentation (HANDOFF, domain manuals)
+├── scripts/                 # operational scripts (numbered 00-07)
+├── outputs/                 # SYMLINK -> /home/jagones/runs
+├── .venv-abliteration       # SYMLINK -> /home/jagones/.venvs/vllm-abliteration
+├── trash/                   # scratch / one-off experiments (excluded from mass fixes)
+│   └── abliteration_workspace/  # clones of upstream recipes (gitignored)
+└── logs/                    # long-running log captures
+
+Heavy artifacts live OUTSIDE the repo (per the 2026-09-05 housekeeping):
+  /home/jagones/models/      # downloaded model directories (always)
+  /home/jagones/runs/        # per-run test logs (target of outputs/ symlink)
+  /home/jagones/.venvs/      # Python virtualenvs (target of .venv-* symlinks)
 ```
 
 ## Quickstart
@@ -40,9 +47,18 @@ bash /home/jagones/Programs/vLLM/scripts/03_stop_vllm.sh
 
 ## Default model
 
-`Qwen/Qwen3-1.7B` - smallest Qwen3 family member with native thinking.
-Swap in `Qwen/Qwen3-4B` (8GB fp16) or `Qwen/Qwen3-8B` (16GB fp16) for more
-capability by editing `scripts/env.sh` (`MODEL_HANDLE`).
+`Qwen/Qwen3-1.7B` - smallest Qwen3 family member with native thinking,
+running at **254K context** (40K native + YaRN factor 6.4). Swap in
+`Qwen/Qwen3-4B` (8GB fp16) or `Qwen/Qwen3-8B` (16GB fp16) for more
+capability by editing `scripts/env.sh` (`MODEL_HANDLE`). See
+`.agent/HANDOFF.md` § "Current state" for live config.
+
+**Abliterated variants** (DeepSeek-V4-Flash-0731 Uncensored, EXL3 K2)
+are built via the tensor-swap pipeline described in
+`.agent/README-vllm-dgx.md` § "Abliteration pipeline". Output lives
+in `/home/jagones/models/exl3-k2-abliterated/`, requires the
+tpurtell GHCR container (sm_121 SparkInfer/ExLlamaV3/Trellis
+kernels).
 
 ## Tuning knobs (env.sh)
 
@@ -50,8 +66,9 @@ capability by editing `scripts/env.sh` (`MODEL_HANDLE`).
 | --------------- | ------------------------- | ------------------------------------------ |
 | `MODEL_HANDLE`  | `Qwen/Qwen3-1.7B`         | Any HF model vLLM supports                 |
 | `VLLM_IMAGE`    | `vllm/vllm-openai:latest` | NVIDIA recipe-recommended tag              |
-| `MAX_MODEL_LEN` | `8192`                    | prompt+output; lower to save KV-cache VRAM |
-| `GPU_MEM_UTIL`  | `0.8`                     | fraction of GPU vLLM may consume           |
+| `MAX_MODEL_LEN` | `254000`                  | prompt+output; YaRN-extended from native 40K |
+| `GPU_MEM_UTIL`  | `0.28`                    | fraction of GPU vLLM may consume (lean for 254K) |
+| `ROPE_SCALING`  | `{"rope_type":"yarn","factor":6.4,...}` | YaRN config, injected via `--hf-overrides` |
 | `VLLM_PORT`     | `8000`                    | host port (avoid 8130 = llama-server)      |
 
 ## Why `--reasoning-parser qwen3`?
@@ -104,5 +121,11 @@ family for consistency.
 
 ## Known issues (DGX Spark, sm\_121)
 
-See `.agent/HANDOFF.md` for the current state and `.agent/README-vllm-dgx.md`
-for the deep manual.
+See `.agent/HANDOFF.md` for the current state (Qwen3-1.7B @ 254K live)
+and `.agent/README-vllm-dgx.md` for the deep manual, including the
+abliteration pipeline and the diagnosis cheatsheet.
+
+The most common breakage modes and their fixes are summarized in
+the cheatsheet at the bottom of `.agent/README-vllm-dgx.md`:
+`--enforce-eager`, `--rope-scaling` vs `--hf-overrides`, OpenClaw
+picker empty / 404, etc.

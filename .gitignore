@@ -41,3 +41,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# local agent workspace (hand-off notes, runbooks, AI scratchpads).
+# Kept on disk only — never pushed to remote.
+.agent/
