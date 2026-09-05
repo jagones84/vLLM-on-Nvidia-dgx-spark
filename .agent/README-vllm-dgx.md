@@ -35,6 +35,76 @@ DGX Spark: GB10, sm\_121, 128 GB unified LPDDR5x, driver 580.173.02, CUDA 13.0.
    script greps it out and exports `HF_TOKEN`. Do not hardcode tokens in
    scripts.
 
+## OpenClaw model registration (lessons from the vLLM-1.7B integration)
+
+OpenClaw 2026.7.1-2 on this DGX reads the webchat model picker from
+**three** places, in this order of precedence:
+
+1. `~/.openclaw/openclaw.json` → `modelPolicy.allow` (top-level array of
+   `provider/model-id` strings). **THIS is the canonical allowlist that
+   actually unlocks the picker.** If the model isn't here, the picker
+   hides it entirely — even if the provider is registered and the
+   per-agent whitelist contains it.
+2. `~/.openclaw/agents/<name>/models.json` (one per agent — there are
+   6: `coordinator`, `coder`, `analyst`, `researcher`, `writer`,
+   `main/agent`). Each has its own `providers` block that merges with
+   the global providers but can override endpoints.
+3. `~/.openclaw/openclaw.json` → `models.providers` (global fallback).
+
+`agents.entries.<name>.models` (the per-agent `models` whitelist) is
+**NOT** sufficient to make the picker show a model. It's used for
+post-pick policy checks, not for visibility.
+
+### Two non-obvious gotchas
+
+**(a) Model id mismatch = silent 404.** The openclaw provider declares
+`id` (e.g. `qwen3-1.7b`). vLLM serves whatever id it gets at
+`/v1/models` — by default that's the HuggingFace id of the model
+(e.g. `Qwen/Qwen3-1.7B`). If the two don't match, every chat call
+returns `404 "The model qwen3-1.7b does not exist"`. The picker still
+shows the model because the openclaw id is used for display, but the
+backend call fails.
+
+Two ways to fix:
+  - **Pass `--served-model-name <id>` to vLLM** so the served id
+    matches the openclaw provider id.
+  - **Set the openclaw provider `id` to the HF id**
+    (`Qwen/Qwen3-1.7B`) — works without changing vLLM flags.
+
+Verify with `curl http://127.0.0.1:8000/v1/models` before wiring up
+the provider. The exact id there MUST be the one in the openclaw
+provider.
+
+**(b) Gateway hot-reload watches openclaw.json but not the per-agent
+models.json.** Restarting openclaw after editing the per-agent files
+**does** pick them up (the agent DB re-reads them on agent start), but
+a hot file-touch does not. The simplest reliable way: edit
+`openclaw.json` (auto hot-reload) and edit the per-agent files too
+(takes effect on next chat session).
+
+### Checklist for the next model
+
+Before running `scripts/06_register_openclaw.sh`:
+
+1. `curl http://127.0.0.1:<port>/v1/models` → note the exact `id`
+   field. This is the canonical id.
+2. Decide: keep the HF id in openclaw, OR pass `--served-model-name
+   <openclaw_id>` to vLLM. **Document the choice.**
+3. Update `scripts/env.sh` with the served name if you went with
+   `--served-model-name`.
+4. Run `scripts/06_register_openclaw.sh` — verifies `openclaw.json`
+   hot-reload worked.
+5. Verify the **three places** are all updated:
+     - `openclaw.json` → `models.providers` (provider)
+     - `openclaw.json` → `modelPolicy.allow` (picker allowlist)
+     - 6 per-agent `~/.openclaw/agents/*/models.json` (picker catalog)
+6. **Hard refresh the webchat (Ctrl+Shift+R).** WebSocket caches the
+   model list; F5 alone may not be enough.
+
+The script `scripts/add_vllm_to_per_agent_models.py` handles step 5c.
+Step 5b (`modelPolicy.allow`) is still a manual edit — add the new
+`provider/model-id` string to the array in `openclaw.json`.
+
 ## Canonical launch (Qwen3-1.7B)
 
 ```bash
