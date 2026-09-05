@@ -1,6 +1,6 @@
 # vLLM on DGX Spark
 
-Containerized vLLM serving of small thinking models on NVIDIA DGX Spark (GB10, SM_121, 128GB unified memory).
+Containerized vLLM serving of small thinking models on NVIDIA DGX Spark (GB10, SM\_121, 128GB unified memory).
 
 Follows the official recipe: <https://build.nvidia.com/spark/vllm/instructions>
 and the model recipe: <https://recipes.vllm.ai/Qwen/Qwen3-1.7B>
@@ -46,13 +46,13 @@ capability by editing `scripts/env.sh` (`MODEL_HANDLE`).
 
 ## Tuning knobs (env.sh)
 
-| Variable | Default | Notes |
-|---|---|---|
-| `MODEL_HANDLE` | `Qwen/Qwen3-1.7B` | Any HF model vLLM supports |
-| `VLLM_IMAGE` | `vllm/vllm-openai:latest` | NVIDIA recipe-recommended tag |
-| `MAX_MODEL_LEN` | `8192` | prompt+output; lower to save KV-cache VRAM |
-| `GPU_MEM_UTIL` | `0.8` | fraction of GPU vLLM may consume |
-| `VLLM_PORT` | `8000` | host port (avoid 8130 = llama-server) |
+| Variable        | Default                   | Notes                                      |
+| --------------- | ------------------------- | ------------------------------------------ |
+| `MODEL_HANDLE`  | `Qwen/Qwen3-1.7B`         | Any HF model vLLM supports                 |
+| `VLLM_IMAGE`    | `vllm/vllm-openai:latest` | NVIDIA recipe-recommended tag              |
+| `MAX_MODEL_LEN` | `8192`                    | prompt+output; lower to save KV-cache VRAM |
+| `GPU_MEM_UTIL`  | `0.8`                     | fraction of GPU vLLM may consume           |
+| `VLLM_PORT`     | `8000`                    | host port (avoid 8130 = llama-server)      |
 
 ## Why `--reasoning-parser qwen3`?
 
@@ -62,6 +62,7 @@ fields per message in vLLM 0.28.0:
 
 - `message.reasoning` - the model's internal "think" block (NEW in 0.28.0; older
   releases exposed it as `reasoning_content`).
+
 - `message.content` - the user-facing answer.
 
 Token usage also reports the split via
@@ -77,7 +78,13 @@ the client cannot separate them.
 nvidia-smi --query-gpu=memory.used,memory.free --format=csv
 ```
 
-## Known issues (DGX Spark, sm_121)
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE). The vLLM server itself is also
+Apache 2.0 (NVIDIA/UCLA), so this repo inherits the same license
+family for consistency.
+
+## Known issues (DGX Spark, sm\_121)
 
 See `.agent/HANDOFF.md` for the current state and `.agent/README-vllm-dgx.md`
 for the deep manual.
