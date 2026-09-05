@@ -25,6 +25,8 @@ Heavy artifacts live OUTSIDE the repo (per the 2026-09-05 housekeeping):
 
 ## Quickstart
 
+### Default: Qwen3-1.7B @ 254K (thinking, YaRN)
+
 ```bash
 # 0. (only if a llama-server is hogging VRAM)
 bash /home/jagones/Programs/vLLM/scripts/00_stop_llama.sh
@@ -45,20 +47,68 @@ bash /home/jagones/Programs/vLLM/scripts/05_test_thinking.sh
 bash /home/jagones/Programs/vLLM/scripts/03_stop_vllm.sh
 ```
 
-## Default model
+### Alternative: DeepSeek-V4-Flash-0731 (abliterated, 80 GB, 131K ctx)
+
+```bash
+# Stop the Qwen3 server first (one container at a time on :8000)
+bash /home/jagones/Programs/vLLM/scripts/03_stop_vllm.sh
+
+# Start the abliterated EXL3 K2 model in the tpurtell container
+bash /home/jagones/Programs/vLLM/scripts/02c_start_tpurtell_abliterated.sh
+
+# Bench (decode + reasoning separation + prefill test)
+ssh dgx "python3 /home/jagones/Programs/vLLM/trash/bench_tps.py --long 100000"
+
+# Smoke-test uncensored compliance
+ssh dgx "python3 /home/jagones/Programs/vLLM/trash/test_uncensored.py"
+
+# Stop
+bash /home/jagones/Programs/vLLM/scripts/02c_start_tpurtell_abliterated.sh --stop
+```
+
+Server profile lives in `trash/abliteration_workspace/tpurtell/.env`:
+131,072-token context, fixed **13.5 GiB KV pool** via
+`--kv-cache-memory-bytes` (EXTRA_VLLM_ARGS), `MODE=off` (no dSpark
+draft), gpu-mem 0.80. Measured: **19.3 tok/s decode, 1044.9 tok/s
+prefill @ 111K, ~95 GiB / 121.69 GiB device**.
+
+**DO NOT** use the recipe's aarch64 defaults (1M ctx, 0.85+ util) —
+they OOM-kill the host via `earlyoom` (restart loop). On a DGX Spark
+that also runs a desktop + gateway, keep util at 0.80 and pin the KV
+pool instead of raising the fraction. See `.agent/HANDOFF.md`
+lessons #14-19.
+
+**Think / content separation:** the model serves with
+`--reasoning-parser deepseek_v4`; pass
+`"chat_template_kwargs": {"thinking": true}` per request to receive
+`message.reasoning` (trace) and `message.content` (answer) as
+separate fields.
+
+## Models on the DGX Spark
+
+| Path                                            | Size  | Role                                                                                  |
+| ----------------------------------------------- | ----- | ------------------------------------------------------------------------------------- |
+| `/home/jagones/models/exl3-k2-abliterated/`     | 79 GB | **CURRENTLY RUNNING**. EXL3 K2 quantized model with 92 `wo_b` tensors swapped to abliterated values. 8/8 AdvBench probes passed. |
+| `/home/jagones/models/exl3-k2-stock/`           | 79 GB | Pristine EXL3 K2 quantized model (untouched, for rollback or comparison).              |
+
+~~`/home/jagones/models/dsv4-ablit-safetensors/` (157 GB)~~ deleted on
+2026-09-05 after end-to-end verification. It was the BF16 source
+overlay (92 `wo_b` tensors) from
+`cebeuq/DeepSeek-V4-Flash-0731-abliterated`; re-download it from
+HuggingFace and re-run `trash/swap_wob.py` if the abliterated output
+ever needs rebuilding.
+
+The two remaining directories are NOT two different models — they are
+**censored stock vs its abliterated twin** (identical except the 92
+swapped `wo_b` tensors).
+
+## Default model (when using Qwen3 recipe)
 
 `Qwen/Qwen3-1.7B` - smallest Qwen3 family member with native thinking,
 running at **254K context** (40K native + YaRN factor 6.4). Swap in
 `Qwen/Qwen3-4B` (8GB fp16) or `Qwen/Qwen3-8B` (16GB fp16) for more
 capability by editing `scripts/env.sh` (`MODEL_HANDLE`). See
 `.agent/HANDOFF.md` § "Current state" for live config.
-
-**Abliterated variants** (DeepSeek-V4-Flash-0731 Uncensored, EXL3 K2)
-are built via the tensor-swap pipeline described in
-`.agent/README-vllm-dgx.md` § "Abliteration pipeline". Output lives
-in `/home/jagones/models/exl3-k2-abliterated/`, requires the
-tpurtell GHCR container (sm_121 SparkInfer/ExLlamaV3/Trellis
-kernels).
 
 ## Tuning knobs (env.sh)
 
@@ -121,11 +171,13 @@ family for consistency.
 
 ## Known issues (DGX Spark, sm\_121)
 
-See `.agent/HANDOFF.md` for the current state (Qwen3-1.7B @ 254K live)
-and `.agent/README-vllm-dgx.md` for the deep manual, including the
+See `.agent/HANDOFF.md` for the current state (DeepSeek-V4-Flash-0731
+abliterated running, Qwen3-1.7B @ 254K available) and
+`.agent/README-vllm-dgx.md` for the deep manual, including the
 abliteration pipeline and the diagnosis cheatsheet.
 
 The most common breakage modes and their fixes are summarized in
 the cheatsheet at the bottom of `.agent/README-vllm-dgx.md`:
 `--enforce-eager`, `--rope-scaling` vs `--hf-overrides`, OpenClaw
-picker empty / 404, etc.
+picker empty / 404, **OOM-kill of the tpurtell container via
+`earlyoom`** (lesson #14), etc.
