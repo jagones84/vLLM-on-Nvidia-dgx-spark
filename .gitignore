@@ -12,9 +12,20 @@ logs/
 
 # python
 .venv/
+.venv-*
+.venv-*/
+venv-*/
+venv-*
 venv/
 __pycache__/
 *.pyc
+
+# run logs (live symlink to /home/jagones/runs in DGX deployment)
+outputs
+outputs/
+
+# abliteration scratch workspace (clones, abliterated model variants)
+trash/abliteration_workspace/
 
 # secrets (NEVER commit these)
 .env

@@ -1,8 +1,0 @@
-{
-    "error": {
-        "message": "1 validation error:\n  {'type': 'json_invalid', 'loc': ('body', 1), 'msg': 'JSON decode error', 'input': {}, 'ctx': {'error': 'Expecting property name enclosed in double quotes'}}",
-        "type": "Bad Request",
-        "param": "body.1",
-        "code": 400
-    }
-}
