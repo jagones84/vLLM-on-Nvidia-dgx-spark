@@ -72,6 +72,24 @@ into the think block).
 Without a parser, the think tokens end up concatenated inside `content` and
 the client cannot separate them.
 
+## Use the model from openclaw
+
+The vLLM server is OpenAI-compatible on `http://127.0.0.1:8000/v1`. To make
+it available as a selectable model inside openclaw's webchat / agents,
+register it as a provider:
+
+```bash
+bash scripts/06_register_openclaw.sh
+```
+
+This adds a `local-vllm` entry under `models.providers` in
+`~/.openclaw/openclaw.json`, pointing to the vLLM endpoint. The gateway
+hot-reloads the file (no service restart) and the model appears as
+**"Qwen3 1.7B Thinking (vLLM, DGX Spark)"** in the model picker.
+
+Roll back with the timestamped backup the script creates
+(`openclaw.json.bak-addvllm-<TS>`).
+
 ## vRAM check
 
 ```bash
