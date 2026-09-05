@@ -1,0 +1,32 @@
+# trash: one-off experiments, scratch scripts, test fixtures.
+# This folder is excluded from mass refactors and from the test pipeline.
+trash/
+*.bak
+*.bak-*
+__pycache__/
+*.pyc
+*.log
+*.tmp
+.DS_Store
+logs/
+
+# python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# secrets (NEVER commit these)
+.env
+*.env
+secrets.yaml
+*.key
+*.pem
+
+# os
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp

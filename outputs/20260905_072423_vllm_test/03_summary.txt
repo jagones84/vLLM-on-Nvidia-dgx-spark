@@ -1,0 +1,28 @@
+============================================================
+vLLM THINKING TEST SUMMARY (Qwen3-1.7B, reasoning-parser=qwen3)
+============================================================
+01_response_math.json: finish=stop | has_think=True (8860 chars) | has_content=True (1650 chars) | reasoning_tokens=3012
+02_response_logic.json: finish=stop | has_think=True (5699 chars) | has_content=True (2183 chars) | reasoning_tokens=1300
+
+Sample (first 400 chars of reasoning + content) from 01_response_math.json:
+--- reasoning (THINK) ---
+
+Okay, let me try to figure out when these two trains will meet. So, there's a train leaving station A at 9:00 AM going at 60 km/h. Then another train leaves station B, which is 300 km away from A, at 10:00 AM, traveling towards A at 90 km/h. I need to find out the time when they meet. Hmm, okay.
+
+First, let me visualize the problem. Station A and Station B are 300 km apart. Train A starts at 9:00
+--- content (ANSWER) ---
+
+
+To determine when the two trains meet, we analyze their motion and the relative positions over time.
+
+---
+
+### **Given:**
+
+- **Train A** departs from Station A at **9:00 AM** at a speed of **60 km/h**.
+- **Train B** departs from Station B, which is **300 km away** from Station A, at **10:00 AM** at a speed of **90 km/h**.
+- They are moving **towards each other**.
+
+---
+
+### **Step 1: Determine th
