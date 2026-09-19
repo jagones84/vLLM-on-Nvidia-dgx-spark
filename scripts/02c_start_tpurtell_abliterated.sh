@@ -8,20 +8,34 @@
 # file next to compose.yaml:
 #   trash/abliteration_workspace/tpurtell/.env
 #
-# Current profile (2026-09-05, proven healthy + benchmarked):
+# Current profile (2026-09-05 22:35, proven healthy + benchmarked):
 #   MODE=off                          # dSpark draft disabled (-5.5 GiB)
-#   MAX_MODEL_LEN=131072              # 131K context
+#   MAX_MODEL_LEN=102400              # 100K context (was 131K, reduced per lesson #22)
 #   GPU_MEMORY_UTILIZATION=0.80       # proven safe against earlyoom
 #   EXTRA_VLLM_ARGS=--kv-cache-memory-bytes 14500000000
 #                                     # fixed 13.5 GiB KV pool (530K tokens)
 #   PREFIX_CACHE=0, MAX_NUM_SEQS=2, MAX_NUM_BATCHED_TOKENS=2048
 #
 # Measured on GB10 (128 GB unified):
-#   decode 19.3 tok/s | prefill 1044.9 tok/s @ 111K | ~95 GiB GPU total
+#   decode 19.3 tok/s | prefill 1044.9 tok/s @ 111K | ~90 GiB GPU total
 #
 # WARNING: do NOT raise GPU_MEMORY_UTILIZATION to the recipe default
 # (0.85+) or remove the kv cap: earlyoom kills EngineCore when host
 # free memory drops below 5% (see .agent/HANDOFF.md lessons #14-15).
+#
+# WARNING: do NOT raise MAX_MODEL_LEN back to 131K without first
+# implementing lesson #22 policy gate (hermes-agent must not auto-
+# launch `docker compose up -d` without user confirmation).
+#
+# Vast.ai cloud host: this script relies on `docker compose up -d`
+# using the `runtime: nvidia` field in compose.yaml (set per
+# lesson #23 after the kernel bump 6.17.0-1031 -> 6.17.0-1032
+# broke CDI compatibility). If you see exit code 128 with
+# "Using requested mode 'cdi' invoking the NVIDIA Container
+# Runtime Hook directly is not supported" → check
+# `docker info | grep -i runtime` lists `nvidia` AND
+# `trash/abliteration_workspace/tpurtell/compose.yaml` has
+# `runtime: nvidia` (not `gpus: all`).
 # -------------------------------------------------------------------------
 set -Eeuo pipefail
 
@@ -48,6 +62,26 @@ if ! ssh "${DGX_HOST}" "test -f ${TPURTELL_DIR}/compose.yaml && test -f ${TPURTE
   exit 2
 fi
 
+# Pre-flight: verify compose.yaml uses `runtime: nvidia` (lesson #23).
+# On Vast.ai cloud hosts, `gpus: all` (CDI) is NOT supported by the
+# kaalia_docker_shim runtime — container fails with exit 128.
+if ssh "${DGX_HOST}" "grep -q '^\\s*gpus: all' ${TPURTELL_DIR}/compose.yaml" 2>/dev/null; then
+  echo "ERROR: compose.yaml still uses \`gpus: all\` (CDI mode)." >&2
+  echo "       Fix: replace with \`runtime: nvidia\` per HANDOFF.md lesson #23." >&2
+  exit 3
+fi
+if ! ssh "${DGX_HOST}" "grep -q '^\\s*runtime: nvidia' ${TPURTELL_DIR}/compose.yaml" 2>/dev/null; then
+  echo "WARNING: compose.yaml does not declare \`runtime: nvidia\`." >&2
+  echo "         On Vast.ai hosts this is required (lesson #23)." >&2
+fi
+
+# Pre-flight: verify the .env reflects the current context (100K).
+if ssh "${DGX_HOST}" "grep -q '^MAX_MODEL_LEN=131072' ${TPURTELL_DIR}/.env" 2>/dev/null; then
+  echo "ERROR: .env still has MAX_MODEL_LEN=131072 (was reduced to 102400 per lesson #22)." >&2
+  echo "       Update it before starting the container." >&2
+  exit 3
+fi
+
 # Idempotent restart.
 ssh "${DGX_HOST}" "docker rm -f ${CONTAINER} 2>/dev/null || true"
 
@@ -55,7 +89,7 @@ echo ">>> launching tpurtell abliterated recipe on ${DGX_HOST}"
 ssh "${DGX_HOST}" "cd ${TPURTELL_DIR} && docker compose up -d 2>&1 | tail -3"
 
 echo
-echo ">>> waiting for APIServer healthcheck (up to 7.5 min) ..."
+echo ">>> waiting for APIServer healthcheck (up to 7.5 min, typically ~110s after kernel+cudagraph warmup) ..."
 ok=""
 for i in $(seq 1 90); do
   status=$(ssh "${DGX_HOST}" "docker inspect ${CONTAINER} --format '{{.State.Health.Status}}' 2>/dev/null" || true)
